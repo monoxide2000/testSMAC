@@ -1,0 +1,144 @@
+---
+title: "Analisis fractal con R"
+subtitle: "Generación y estimación"
+author: "Julio César Ramírez Pacheco"
+date: "09/03/2022"
+output:
+   prettydoc::html_pretty:
+      theme: tactile
+      highlight: vignette
+---
+
+
+```{r knitr_init, echo=FALSE, message=FALSE, warning=FALSE, cache=FALSE}
+library(knitr)
+library(rmdformats)
+library(highcharter)
+library(fArma)
+library(liftLRD)
+## Global options
+options(max.print="75")
+opts_chunk$set(echo=TRUE,
+	             cache=TRUE,
+               prompt=FALSE,
+               tidy=TRUE,
+               comment=NA,
+               message=FALSE,
+               warning=FALSE)
+opts_knit$set(width=75)
+library(magrittr)
+library(fractal)
+```
+
+## Generación de señales del tipo fGn
+
+```{r eval=TRUE}
+longi  <- 256   
+modelo <- lmModel("fgn", HG=0.7)
+sFrac  <- lmSimulate(modelo, n.sample=longi)
+df     <- data.frame(t = seq(0,1,length=longi), datos = sFrac)
+highchart() %>% hc_add_series(df, "line", hcaes(x=t, y= datos), name = "fGn") %>% 
+  hc_title(text = "Ruido Gaussiano fraccional") %>% 
+  hc_yAxis( title = list(text = "Valores"),
+        labels = list(format = "{value}")) %>% 
+           hc_xAxis(title = list(text="Tiempo")) %>% hc_add_theme(hc_theme_flatdark())
+
+```
+
+
+## Generación de señales del tipo fBm
+
+```{r eval=TRUE}
+longi  <- 256   
+modelo <- lmModel("dfbm", HB=0.5)
+sFrac  <- lmSimulate(modelo, n.sample=longi)
+df     <- data.frame(t = seq(0,1,length=longi), datos = sFrac)
+highchart() %>% hc_add_series(df, "line", hcaes(x=t, y= datos), name = "fBm") %>% 
+  hc_title(text = "Movimiento Gaussiano fraccional") %>% 
+  hc_yAxis( title = list(text = "Valores"),
+        labels = list(format = "{value}")) %>% 
+           hc_xAxis(title = list(text="Tiempo")) %>% hc_add_theme(hc_theme_flatdark())
+
+```
+
+
+
+# Estimación del índice de fractalidad: R/S
+
+```{r frac1, eval=TRUE}
+longi  <- 256   
+modelo <- lmModel("fgn", HG=0.6)
+sFrac  <- lmSimulate(modelo, n.sample=longi)
+estim  <- rsFit(sFrac@data)
+df     <- data.frame(t = log2(estim@plot$m), datos = log2(estim@plot$data))
+y <- as.double(estim@fit$coefficients[1]) +       log2(estim@plot$m)*as.double(estim@fit$coefficients[2])
+df2    <- data.frame(t=log2(estim@plot$m), datos = y)
+highchart() %>% hc_add_series(df, "scatter", hcaes(x=t, y=datos), name = "R/S") %>% 
+  hc_add_series(df2, "line", hcaes(x=t, y=datos), name= "fit") %>% 
+  hc_title(text = "Estimación del índice de fractalidad mediante R/S") %>% 
+  hc_yAxis( title = list(text = "Valores R/S"),
+        labels = list(format = "{value}"), max=5) %>% 
+           hc_xAxis(title = list(text="m")) %>% hc_add_theme(hc_theme_flatdark())
+
+```
+La estimación es `r estim@fit$coefficients[2]`
+
+
+# Estimación del índice de fractalidad: R/S
+
+```{r frac2, eval=TRUE}
+longi  <- 256   
+modelo <- lmModel("fgn", HG=0.6)
+sFrac  <- lmSimulate(modelo, n.sample=longi)
+estim  <- waveletFit(sFrac@data)
+df     <- data.frame(t = log2(estim@plot$m), datos = log2(estim@plot$data))
+y <- as.double(estim@fit$coefficients[1]) +       log2(estim@plot$m)*as.double(estim@fit$coefficients[2])
+df2    <- data.frame(t=log2(estim@plot$m), datos = y)
+highchart() %>% hc_add_series(df, "scatter", hcaes(x=t, y=datos), name = "R/S") %>% 
+  hc_add_series(df2, "line", hcaes(x=t, y=datos), name= "fit") %>% 
+  hc_title(text = "Estimación del índice de fractalidad mediante onditas") %>% 
+  hc_yAxis( title = list(text = "Valores dX(j,k)"),
+        labels = list(format = "{value}"), max=10) %>% 
+           hc_xAxis(title = list(text="m")) %>% hc_add_theme(hc_theme_flatdark())
+
+```
+
+La estimación es `r estim@hurst$H`
+
+# Estimación con otras técnicas.
+
+```{r frac3}
+set.seed(101010)
+h <-  seq(0.5, 0.9, by=0.1)
+N <-  15
+rs <- NULL
+wav <- NULL
+per <- NULL
+lift <- NULL
+tabla <- data.frame()
+for(j in 1:length(h)){
+  for(i in 1:N){
+    modelo <- lmModel("fgn", HG=h[j])
+    datos  <- lmSimulate(modelo, n.sample=1024)@data
+    rs     <- rbind(rs,  rsFit(datos)@fit$coefficients[2])
+    wav    <- rbind(wav, waveletFit(datos)@hurst$H)
+    per    <- rbind(per, perFit(datos)@hurst$H)
+    lift   <- rbind(lift, liftHurst(datos)[2])
+    tabla  <- rbind(tabla, c(h[j], rs[(j-1)*N+i], "R/S"))
+    tabla  <- rbind(tabla, c(h[j], wav[(j-1)*N+i], "Wavelet"))
+    tabla  <- rbind(tabla, c(h[j], per[(j-1)*N+i], "Periodogram"))
+    tabla  <- rbind(tabla, c(h[j], lift[(j-1)*N+i], "WaveletLift"))
+  }
+}
+df <- data.frame(TrueH = rep(h,each=N), RSEstimations = rs, WavEstimations = wav, PerEstimations = per, LifEstimations = lift)
+DT::datatable(df, colnames = c("TrueH", "RSEstimations", "WavEstimations", "DFAEStimations"))
+colnames(tabla) <- c("TrueH", "Estimation", "Type")
+tabla$TrueH <- as.numeric(tabla$TrueH)
+tabla$Estimation <- as.numeric(tabla$Estimation)
+hchart(tabla, "point", hcaes(x = TrueH, y = Estimation, group = Type)) %>% 
+  hc_title(text = "Estimación del índice de fractalidad") %>% 
+  hc_yAxis( title = list(text = "Estimaciones"),
+        labels = list(format = "{Valores reales}")) %>% 
+           hc_xAxis(title = list(text="m")) %>% hc_add_theme(hc_theme_flatdark())
+```
+
